@@ -1,10 +1,10 @@
-#include <math.h>
 #include <time.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include "raylib.h"
+#include "editor.h"
 // colors are RGBA
 
 typedef struct {
@@ -58,15 +58,6 @@ void DrawAsciiChar(char c, size_t x, size_t y, Screen* s) {
     DrawTexturePro(s->font, source, dest, (Vector2){0, 0}, 0.0f, WHITE);
 }
 
-void draw(Screen* s, double dt) {
-    for (size_t  i = 0; i < s->width; i++) {
-       int x = sin((double)i / 20) * s->height;
-       if (x <= 0) continue;
-       // printf("%zu %d %zu\n", i, x, x*s->width + i);
-       s->screen[x*s->width + i] = 'O';
-    }
-}
-
 void draw_bg(Screen* s, Shader shader) {
     double screen_ratio = (double)s->width/(double)s->height;
     double image_ratio = (double)s->bg.width/(double)s->bg.height;
@@ -83,29 +74,23 @@ void draw_bg(Screen* s, Shader shader) {
         width = s->bg.width * mltp;
         height = s->bg.height * mltp;
         y = (float)s->sheight / 2 - height/2;
-        dest.width = width;
-        dest.height = height;
-        dest.x = x;
-        dest.y = y;
-        // printf("fit width %zu/%d=%f rect = %f %f\n",s->swidth, s->bg.width, mltp, x, y);
     } else { // centre width, fit height
         double mltp = (double)s->sheight/(double)s->bg.height;
         width = s->bg.width * mltp;
         height = s->bg.height * mltp;
         x = (float)s->swidth / 2 - width / 2;
-        dest.width = width;
-        dest.height = height;
-        dest.x = x;
-        dest.y = y;
-        // printf("fit width %zu/%d=%f rect = %f %f\n",s->swidth, s->bg.width, mltp, x, y);
     }
+    dest.width = width;
+    dest.height = height;
+    dest.x = x;
+    dest.y = y;
+    // printf("fit %zu/%d=%f rect = %f %f\n",s->swidth, s->bg.width, mltp, x, y);
     BeginShaderMode(shader);
     DrawTexturePro(s->bg, source, dest, (Vector2){0,0}, 0.0f, (Color){0xff,0xff,0xff,0x33});
     EndShaderMode();
 }
 
-char* files[] = {"bg.png",
-};
+char* files[] = {"bg.png"};
 
 void load_texture(Texture2D* txtr, const char *path) {
     *txtr = LoadTexture(path);
@@ -158,24 +143,31 @@ void bg_handler(void* data) {
     t.duration = 1.0; // seconds
     screen_add_timeout(s, t);
 }
+
+void process_input() {
+    char buffer[64];     // max keys per frame
+    size_t count = 0;
+
+    int key = GetCharPressed();
+
+    while (key > 0 && count < sizeof(buffer)) {
+        buffer[count++] = (char)key;
+        key = GetCharPressed();
+    }
+
+    if (count > 0) {
+        handle_input(buffer, count, NULL);
+    }
+}
+
 int main(void) {
     Screen s;
     s.swidth = 800;
     s.sheight = 600;
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(s.swidth, s.sheight, "Hello Raylib");
-    // 16x20
-    // 95.0 glyphs
-    LoadFontTexture(&s, "font.png");
-    load_texture(&s.bg, "bg.png");
-    // load_texture(&s.bg, "");
 
-    Shader shader = LoadShader(0, "fragments.fs");
-    int satLoc = GetShaderLocation(shader, "saturation");
-
-    float saturation = 1.7f;
-    SetShaderValue(shader, satLoc, &saturation, SHADER_UNIFORM_FLOAT);
-
+    // init screen
     s.cwidth = 16;
     s.cheight = 20;
     s.width = s.swidth/s.cwidth;
@@ -184,19 +176,29 @@ int main(void) {
     s.screen = malloc(s.screen_capacity);
     memset(s.screen, 0, s.width*s.height);
 
+    // init timeouts
     s.timeouts = malloc(10*sizeof(TimeOut*));
     memset(s.timeouts, 0,10*sizeof(TimeOut*)); 
     s.timeouts_cap = 10;
+    // load font and bg
+    // 16x20
+    // 95.0 glyphs
+    LoadFontTexture(&s, "font.png");
+    load_texture(&s.bg, "bg.png");
+
+    // shader
+    Shader shader = LoadShader(0, "fragments.fs");
+    int satLoc = GetShaderLocation(shader, "saturation");
+
+    float saturation = 1.7f;
+    SetShaderValue(shader, satLoc, &saturation, SHADER_UNIFORM_FLOAT);
+
+    // test timeout
     TimeOut bg;
     bg.duration = 1;
     bg.payload = &s;
     bg.f = bg_handler;
     screen_add_timeout(&s, bg);
-    /* for (size_t j = 0; j < s.height; j++){
-        for (size_t i = 0; i < s.width; i++)
-            printf("%c  ", s.screen[i + j*s.width]);
-        printf("\n");
-    } */
 
     while (!WindowShouldClose()) {
         // timeouts first ig.
@@ -236,8 +238,11 @@ int main(void) {
                 s.screen = realloc(s.screen, s.screen_capacity);
             }
         }
+        // input
+        process_input();
+        // draw
         memset(s.screen, 0, s.screen_capacity);
-        draw(&s, 0);
+        draw(s.screen, s.width, s.height, NULL);
         BeginDrawing();
         ClearBackground(BLACK);
         draw_bg(&s, shader);
