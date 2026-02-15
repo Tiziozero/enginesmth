@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include "raylib.h"
 #include "editor.h"
+#include "find_imgs.h"
+#include "common.h"
 // colors are RGBA
 
 typedef struct {
@@ -14,7 +16,7 @@ typedef struct {
     void (*f)(void*);
 } TimeOut;
 typedef struct {
-    char* screen;
+    Cell* screen;
     size_t screen_capacity;
     size_t width; // columns
     size_t height;
@@ -23,6 +25,7 @@ typedef struct {
     size_t cwidth; // char
     size_t cheight;
     Texture2D bg;
+    int has_bg;
     Texture2D font;
     TimeOut** timeouts; // timeout ptr array
     size_t timeouts_cap;
@@ -59,6 +62,7 @@ void DrawAsciiChar(char c, size_t x, size_t y, Screen* s) {
 }
 
 void draw_bg(Screen* s, Shader shader) {
+    if (!s->has_bg) return;
     double screen_ratio = (double)s->width/(double)s->height;
     double image_ratio = (double)s->bg.width/(double)s->bg.height;
     Rectangle source;
@@ -110,7 +114,7 @@ int screen_add_timeout(Screen* s, TimeOut t) {
     for (size_t i = 0; i < s->timeouts_cap; i++) {
         // if there's a free slot, set to tp
         if (s->timeouts[i] == 0) {
-            printf("New timeout (%zu) of %lf seconds.\n", (size_t)tp, tp->duration);
+            // printf("New timeout (%zu) of %lf seconds.\n", (size_t)tp, tp->duration);
             s->timeouts[i] = tp;
             return 1;
         }
@@ -130,22 +134,32 @@ int screen_add_timeout(Screen* s, TimeOut t) {
     return 1;
 }
 
+struct BgPayload {
+    Screen* s;
+    char** paths;
+    size_t count;
+    size_t index;
+};
 void bg_handler(void* data) {
-    printf("bg handler called.");
-    Screen* s = (Screen*)data;
-    char* path = files[img_i++ % img_size];
+    struct BgPayload* payload = (struct BgPayload*)data;
+    Screen* s = payload->s;
+    char* path = payload->paths[(payload->index++ + rand()) % payload->count];
+    if (!path) {
+        printf("path is null.\n");
+        return;
+    }
     UnloadTexture(s->bg);
-    printf("Unloaded texture.\n");
     load_texture(&s->bg, path);
+    s->has_bg = 1;
     TimeOut t;
     t.payload = data;
     t.f = bg_handler;
-    t.duration = 1.0; // seconds
+    t.duration = 5.0; // seconds
     screen_add_timeout(s, t);
 }
 
-void process_input() {
-    char buffer[64];     // max keys per frame
+void process_input(void* payload) {
+    /* char buffer[64];     // max keys per frame
     size_t count = 0;
 
     int key = GetCharPressed();
@@ -153,16 +167,17 @@ void process_input() {
     while (key > 0 && count < sizeof(buffer)) {
         buffer[count++] = (char)key;
         key = GetCharPressed();
-    }
+    } */
 
-    if (count > 0) {
-        handle_input(buffer, count, NULL);
+    KeyEventList kl = get_key_events();
+    if (kl.count > 0) {
+        handle_input(kl, payload);
     }
 }
 
 int main(void) {
     Screen s;
-    s.swidth = 800;
+    s.swidth = 1280;
     s.sheight = 600;
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(s.swidth, s.sheight, "Hello Raylib");
@@ -173,8 +188,8 @@ int main(void) {
     s.width = s.swidth/s.cwidth;
     s.height = s.sheight/s.cheight;
     s.screen_capacity = s.width*s.height;
-    s.screen = malloc(s.screen_capacity);
-    memset(s.screen, 0, s.width*s.height);
+    s.screen = malloc(s.screen_capacity*sizeof(Cell));
+    memset(s.screen, 0, s.width*s.height*sizeof(Cell));
 
     // init timeouts
     s.timeouts = malloc(10*sizeof(TimeOut*));
@@ -185,6 +200,7 @@ int main(void) {
     // 95.0 glyphs
     LoadFontTexture(&s, "font.png");
     load_texture(&s.bg, "bg.png");
+    s.has_bg = 1;
 
     // shader
     Shader shader = LoadShader(0, "fragments.fs");
@@ -194,11 +210,27 @@ int main(void) {
     SetShaderValue(shader, satLoc, &saturation, SHADER_UNIFORM_FLOAT);
 
     // test timeout
+    size_t count;
+    char** images = get_all_image_files_recursive("~/.config/several", &count);
+    if (!images) {
+        printf("Failed to get images.\n");
+        return 1;
+    }
+    struct BgPayload p;
+    p.count = count;
+    p.index = 0;
+    p.paths = images;
+    p.s = &s;
     TimeOut bg;
-    bg.duration = 1;
-    bg.payload = &s;
+    bg.duration = 5.0f;
+    bg.payload = &p;
     bg.f = bg_handler;
     screen_add_timeout(&s, bg);
+
+    for (size_t i = 0; i < count; i++) {
+        // printf("image \"%s\".\n", images[i]);
+    }
+    void* payload = start();
 
     while (!WindowShouldClose()) {
         // timeouts first ig.
@@ -239,18 +271,18 @@ int main(void) {
             }
         }
         // input
-        process_input();
+        process_input(payload);
         // draw
         memset(s.screen, 0, s.screen_capacity);
-        draw(s.screen, s.width, s.height, NULL);
+        draw(s.screen, s.width, s.height, payload);
         BeginDrawing();
-        ClearBackground(BLACK);
+        ClearBackground(GetColor(0x121212ff));
         draw_bg(&s, shader);
         for (size_t i = 0; i < s.width*s.height; i++) {
             size_t x = i % s.width;
             size_t y = i / s.width;
-            DrawAsciiChar(s.screen[i],x*s.cwidth,y*s.cheight, &s);
-            if (s.screen[i] != 0) {
+            DrawAsciiChar(s.screen[i].code,x*s.cwidth,y*s.cheight, &s);
+            if (s.screen[i].code != 0) {
                 DrawPixel(x*s.cwidth, y*s.cheight, WHITE);
             }
         }
