@@ -93,34 +93,33 @@ int raylib_key_to_vterm(VTerm* vt, Program* p) {
     // printf("a %d f7 %d\n", KEY_A, KEY_F7); return 0;
     // Special keys that vterm knows about
     // Handle Ctrl+letter combinations
-    if (ctrl) {
-        // Manually check each letter key
-        if (IsKeyPressed(KEY_A)) { char c = 1;  write(p->master_fd, &c, 1); printf("Sent Ctrl+A (0x01)\n"); return 1; }
-        if (IsKeyPressed(KEY_B)) { char c = 2;  write(p->master_fd, &c, 1); printf("Sent Ctrl+B (0x02)\n"); return 1; }
-        if (IsKeyPressed(KEY_C)) { char c = 3;  write(p->master_fd, &c, 1); printf("Sent Ctrl+C (0x03)\n"); return 1; }
-        if (IsKeyPressed(KEY_D)) { char c = 4;  write(p->master_fd, &c, 1); printf("Sent Ctrl+D (0x04)\n"); return 1; }
-        if (IsKeyPressed(KEY_E)) { char c = 5;  write(p->master_fd, &c, 1); printf("Sent Ctrl+E (0x05)\n"); return 1; }
-        if (IsKeyPressed(KEY_F)) { char c = 6;  write(p->master_fd, &c, 1); printf("Sent Ctrl+F (0x06)\n"); return 1; }
-        if (IsKeyPressed(KEY_G)) { char c = 7;  write(p->master_fd, &c, 1); printf("Sent Ctrl+G (0x07)\n"); return 1; }
-        if (IsKeyPressed(KEY_H)) { char c = 8;  write(p->master_fd, &c, 1); printf("Sent Ctrl+H (0x08)\n"); return 1; }
-        if (IsKeyPressed(KEY_I)) { char c = 9;  write(p->master_fd, &c, 1); printf("Sent Ctrl+I (0x09)\n"); return 1; }
-        if (IsKeyPressed(KEY_J)) { char c = 10; write(p->master_fd, &c, 1); printf("Sent Ctrl+J (0x0A)\n"); return 1; }
-        if (IsKeyPressed(KEY_K)) { char c = 11; write(p->master_fd, &c, 1); printf("Sent Ctrl+K (0x0B)\n"); return 1; }
-        if (IsKeyPressed(KEY_L)) { char c = 12; write(p->master_fd, &c, 1); printf("Sent Ctrl+L (0x0C)\n"); return 1; }
-        if (IsKeyPressed(KEY_M)) { char c = 13; write(p->master_fd, &c, 1); printf("Sent Ctrl+M (0x0D)\n"); return 1; }
-        if (IsKeyPressed(KEY_N)) { char c = 14; write(p->master_fd, &c, 1); printf("Sent Ctrl+N (0x0E)\n"); return 1; }
-        if (IsKeyPressed(KEY_O)) { char c = 15; write(p->master_fd, &c, 1); printf("Sent Ctrl+O (0x0F)\n"); return 1; }
-        if (IsKeyPressed(KEY_P)) { char c = 16; write(p->master_fd, &c, 1); printf("Sent Ctrl+P (0x10)\n"); return 1; }
-        if (IsKeyPressed(KEY_Q)) { char c = 17; write(p->master_fd, &c, 1); printf("Sent Ctrl+Q (0x11)\n"); return 1; }
-        if (IsKeyPressed(KEY_R)) { char c = 18; write(p->master_fd, &c, 1); printf("Sent Ctrl+R (0x12)\n"); return 1; }
-        if (IsKeyPressed(KEY_S)) { char c = 19; write(p->master_fd, &c, 1); printf("Sent Ctrl+S (0x13)\n"); return 1; }
-        if (IsKeyPressed(KEY_T)) { char c = 20; write(p->master_fd, &c, 1); printf("Sent Ctrl+T (0x14)\n"); return 1; }
-        if (IsKeyPressed(KEY_U)) { char c = 21; write(p->master_fd, &c, 1); printf("Sent Ctrl+U (0x15)\n"); return 1; }
-        if (IsKeyPressed(KEY_V)) { char c = 22; write(p->master_fd, &c, 1); printf("Sent Ctrl+V (0x16)\n"); return 1; }
-        if (IsKeyPressed(KEY_W)) { char c = 23; write(p->master_fd, &c, 1); printf("Sent Ctrl+W (0x17)\n"); return 1; }
-        if (IsKeyPressed(KEY_X)) { char c = 24; write(p->master_fd, &c, 1); printf("Sent Ctrl+X (0x18)\n"); return 1; }
-        if (IsKeyPressed(KEY_Y)) { char c = 25; write(p->master_fd, &c, 1); printf("Sent Ctrl+Y (0x19)\n"); return 1; }
-        if (IsKeyPressed(KEY_Z)) { char c = 26; write(p->master_fd, &c, 1); printf("Sent Ctrl+Z (0x1A)\n"); return 1; }
+    // Letter keys with modifiers - loop through A-Z
+    for (int key = KEY_A; key <= KEY_Z; key++) {
+        if (IsKeyPressed(key)) {
+            int letter_index = key - KEY_A;  // 0-25
+            
+            if (ctrl && alt) {
+                // Ctrl+Alt+letter: ESC + ctrl code
+                char seq[2] = {27, letter_index + 1};
+                write(p->master_fd, seq, 2);
+                return 1;
+            } else if (alt && shift) {
+                // Alt+Shift+letter: ESC + uppercase
+                char seq[2] = {27, 'A' + letter_index};
+                write(p->master_fd, seq, 2);
+                return 1;
+            } else if (alt) {
+                // Alt+letter: ESC + lowercase
+                char seq[2] = {27, 'a' + letter_index};
+                write(p->master_fd, seq, 2);
+                return 1;
+            } else if (ctrl) {
+                // Ctrl+letter: just the control code
+                char c = letter_index + 1;
+                write(p->master_fd, &c, 1);
+                return 1;
+            }
+        }
     }
     switch (key) {
         case KEY_ENTER:      printf("KEY_ENTER\n");vterm_keyboard_key(vt, VTERM_KEY_ENTER, mod); return 1;
