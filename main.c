@@ -27,6 +27,9 @@ typedef struct {
     Texture2D bg;
     int has_bg;
     Texture2D font;
+    Texture2D font_bold;
+    Texture2D font_italic;
+    Texture2D font_italic_bold;
     TimeOut** timeouts; // timeout ptr array
     size_t timeouts_cap;
 } Screen;
@@ -34,10 +37,10 @@ typedef struct {
 void LoadFontTexture(Screen* s, const char *path) {
     s->font = LoadTexture(path);
 }
-void DrawAsciiChar(char c, size_t x, size_t y, Screen* s) {
+void DrawAsciiChar(char c, size_t x, size_t y, Screen* s, Texture2D font, Color color) {
     if (c == 0) c = ' ';
     else if (c < 32 || c > 126) {
-        c = '?';
+        c = '~'+1;
     } else {
         // printf("Char %c\n", c);
     }
@@ -58,7 +61,7 @@ void DrawAsciiChar(char c, size_t x, size_t y, Screen* s) {
     };
 
     // printf("%c %d %f %f\n", c, index, source.x, source.y);
-    DrawTexturePro(s->font, source, dest, (Vector2){0, 0}, 0.0f, WHITE);
+    DrawTexturePro(font, source, dest, (Vector2){0, 0}, 0.0f, color);
 }
 
 void draw_bg(Screen* s, Shader shader) {
@@ -154,7 +157,7 @@ void bg_handler(void* data) {
     TimeOut t;
     t.payload = data;
     t.f = bg_handler;
-    t.duration = 5.0; // seconds
+    t.duration = 1.0; // seconds
     screen_add_timeout(s, t);
 }
 
@@ -177,12 +180,16 @@ int main(void) {
     Screen s;
     s.swidth = 1280;
     s.sheight = 600;
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_MINIMIZED);
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    SetExitKey(KEY_NULL);
+
     InitWindow(s.swidth, s.sheight, "Hello Raylib");
+    SetExitKey(KEY_NULL);
+    // printf("a %d f7 %d\n", KEY_A, KEY_F7); return 0;
 
     // init screen
-    s.cwidth = 16;
-    s.cheight = 20;
+    s.cwidth = 20;
+    s.cheight = 30;
     s.width = s.swidth/s.cwidth;
     s.height = s.sheight/s.cheight;
     s.screen_capacity = s.width*s.height;
@@ -198,6 +205,9 @@ int main(void) {
     // 95.0 glyphs
     LoadFontTexture(&s, "font.png");
     load_texture(&s.bg, "bg.png");
+    s.font_bold = LoadTexture("font_bold.png");
+    s.font_italic = LoadTexture("font_italic.png");
+    s.font_italic_bold = LoadTexture("font_italic_bold.png");
     s.has_bg = 1;
     // shader
     Shader shader = LoadShader(0, "fragments.fs");
@@ -218,10 +228,10 @@ int main(void) {
     p.paths = images;
     p.s = &s;
     TimeOut bg;
-    bg.duration = 5.0f;
+    bg.duration = 0.1250f;
     bg.payload = &p;
     bg.f = bg_handler;
-    // screen_add_timeout(&s, bg);
+    screen_add_timeout(&s, bg);
 
     for (size_t i = 0; i < count; i++) {
     }
@@ -275,8 +285,8 @@ int main(void) {
         memset(s.screen, 0, s.screen_capacity*sizeof(Cell));
         for (size_t i = 0; i < s.width*s.height; i++) {
             s.screen[i].code = 0;
-            s.screen[i].bg = GetColor(0x000000ff);
-            s.screen[i].fg = GetColor(0x000000ff);
+            s.screen[i].bg = GetColor(0x0);
+            s.screen[i].fg = GetColor(0x0);
         }
         draw(s.screen, s.width, s.height, payload);
         BeginDrawing();
@@ -285,9 +295,52 @@ int main(void) {
         for (size_t i = 0; i < s.width*s.height; i++) {
             size_t x = i % s.width;
             size_t y = i / s.width;
-            DrawAsciiChar(s.screen[i].code,x*s.cwidth,y*s.cheight, &s);
-            if (s.screen[i].code != 0) {
-                DrawPixel(x*s.cwidth, y*s.cheight, WHITE);
+            Cell c = s.screen[i];
+            if (!c.has_fg) {
+                printf("no fg."); exit (1);
+            }
+            if (c.has_bg) {
+                // DrawRectangle(x*s.cwidth, y*s.cheight, s.cwidth, s.cheight, GetColor(0x555555ff));
+                DrawRectangle(x*s.cwidth, y*s.cheight, s.cwidth, s.cheight, c.bg);
+                // printf("%.2x %.2x %.2x %.2x rgba\n", c.bg.r, c.bg.g, c.bg.b, c.bg.a);
+            }
+            if(c.attr.bold && c.attr.italic) {
+                DrawAsciiChar(c.code,x*s.cwidth,y*s.cheight, &s, s.font_italic_bold, c.fg);
+                if (s.screen[i].code != 0) {
+                    // DrawPixel(x*s.cwidth, y*s.cheight, c.has_fg ? c.fg : WHITE);
+                }
+            } else if(c.attr.bold) {
+                DrawAsciiChar(c.code,x*s.cwidth,y*s.cheight, &s, s.font_bold, c.fg);
+                if (s.screen[i].code != 0) {
+                    // DrawPixel(x*s.cwidth, y*s.cheight, c.has_fg ? c.fg : WHITE);
+                }
+            } else if(c.attr.italic) {
+                DrawAsciiChar(c.code,x*s.cwidth,y*s.cheight, &s, s.font_italic, c.fg);
+                if (s.screen[i].code != 0) {
+                    // DrawPixel(x*s.cwidth, y*s.cheight, c.has_fg ? c.fg : WHITE);
+                }
+            } else if  (c.attr.baseline ||
+                c.attr.blink ||
+                c.attr.bold ||
+                c.attr.dhl ||
+                c.attr.dwl ||
+                c.attr.font || 
+                c.attr.conceal || 
+                c.attr.italic || 
+                c.attr.reverse || 
+                c.attr.small || 
+                c.attr.strike || 
+                c.attr.underline) {
+                DrawRectangle(x*s.cwidth, y*s.cheight, s.cwidth, s.cheight, GetColor(0x121212ff));
+                DrawAsciiChar(c.code,x*s.cwidth,y*s.cheight, &s,s.font, BLACK);
+                if (s.screen[i].code != 0) {
+                    // DrawPixel(x*s.cwidth, y*s.cheight, BLACK);
+                }
+            } else {
+                DrawAsciiChar(c.code,x*s.cwidth,y*s.cheight, &s, s.font, c.fg);
+                if (s.screen[i].code != 0) {
+                    // DrawPixel(x*s.cwidth, y*s.cheight, c.has_fg ? c.fg : WHITE);
+                }
             }
         }
         EndDrawing();

@@ -3,12 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <linux/input.h>
 #include <fcntl.h>
 #include "vterm.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/param.h>
 
 
 #include <pty.h>
@@ -28,7 +26,7 @@ void* start(size_t w, size_t h) {
     if (pid == 0) {
         // child — this IS vim
         // execlp("./test", "vim", "main.txt", NULL);
-        execlp("nvim", "nvim", "main.txt", NULL);
+        execlp("zsh", "zsh", NULL);
         perror("execlp failed");  // only reached if exec failed
         exit(1);
         return 0;
@@ -76,22 +74,54 @@ int resize(void* payload, size_t w, size_t h) {
 #include "vterm.h"
 
 // Returns 1 if handled, 0 if not
-int raylib_key_to_vterm(VTerm* vt) {
+int raylib_key_to_vterm(VTerm* vt, Program* p) {
     int key = GetKeyPressed();
     if (key == 0) return 0;
-    
-    VTermModifier mod = VTERM_MOD_NONE;
-    
-    // Check modifiers
-    if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT))
-        mod |= VTERM_MOD_SHIFT;
-    if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL))
-        mod |= VTERM_MOD_CTRL;
-    if (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT))
-        mod |= VTERM_MOD_ALT;
-    
     printf("Key %d\n", key);
+
+    VTermModifier mod = VTERM_MOD_NONE;
+
+    // Check modifiers
+    bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+    bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+    bool alt = IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT);
+
+    if (shift) mod |= VTERM_MOD_SHIFT;
+    if (ctrl)  mod |= VTERM_MOD_CTRL;
+    if (alt)   mod |= VTERM_MOD_ALT;
+    
+    // printf("a %d f7 %d\n", KEY_A, KEY_F7); return 0;
     // Special keys that vterm knows about
+    // Handle Ctrl+letter combinations
+    if (ctrl) {
+        // Manually check each letter key
+        if (IsKeyPressed(KEY_A)) { char c = 1;  write(p->master_fd, &c, 1); printf("Sent Ctrl+A (0x01)\n"); return 1; }
+        if (IsKeyPressed(KEY_B)) { char c = 2;  write(p->master_fd, &c, 1); printf("Sent Ctrl+B (0x02)\n"); return 1; }
+        if (IsKeyPressed(KEY_C)) { char c = 3;  write(p->master_fd, &c, 1); printf("Sent Ctrl+C (0x03)\n"); return 1; }
+        if (IsKeyPressed(KEY_D)) { char c = 4;  write(p->master_fd, &c, 1); printf("Sent Ctrl+D (0x04)\n"); return 1; }
+        if (IsKeyPressed(KEY_E)) { char c = 5;  write(p->master_fd, &c, 1); printf("Sent Ctrl+E (0x05)\n"); return 1; }
+        if (IsKeyPressed(KEY_F)) { char c = 6;  write(p->master_fd, &c, 1); printf("Sent Ctrl+F (0x06)\n"); return 1; }
+        if (IsKeyPressed(KEY_G)) { char c = 7;  write(p->master_fd, &c, 1); printf("Sent Ctrl+G (0x07)\n"); return 1; }
+        if (IsKeyPressed(KEY_H)) { char c = 8;  write(p->master_fd, &c, 1); printf("Sent Ctrl+H (0x08)\n"); return 1; }
+        if (IsKeyPressed(KEY_I)) { char c = 9;  write(p->master_fd, &c, 1); printf("Sent Ctrl+I (0x09)\n"); return 1; }
+        if (IsKeyPressed(KEY_J)) { char c = 10; write(p->master_fd, &c, 1); printf("Sent Ctrl+J (0x0A)\n"); return 1; }
+        if (IsKeyPressed(KEY_K)) { char c = 11; write(p->master_fd, &c, 1); printf("Sent Ctrl+K (0x0B)\n"); return 1; }
+        if (IsKeyPressed(KEY_L)) { char c = 12; write(p->master_fd, &c, 1); printf("Sent Ctrl+L (0x0C)\n"); return 1; }
+        if (IsKeyPressed(KEY_M)) { char c = 13; write(p->master_fd, &c, 1); printf("Sent Ctrl+M (0x0D)\n"); return 1; }
+        if (IsKeyPressed(KEY_N)) { char c = 14; write(p->master_fd, &c, 1); printf("Sent Ctrl+N (0x0E)\n"); return 1; }
+        if (IsKeyPressed(KEY_O)) { char c = 15; write(p->master_fd, &c, 1); printf("Sent Ctrl+O (0x0F)\n"); return 1; }
+        if (IsKeyPressed(KEY_P)) { char c = 16; write(p->master_fd, &c, 1); printf("Sent Ctrl+P (0x10)\n"); return 1; }
+        if (IsKeyPressed(KEY_Q)) { char c = 17; write(p->master_fd, &c, 1); printf("Sent Ctrl+Q (0x11)\n"); return 1; }
+        if (IsKeyPressed(KEY_R)) { char c = 18; write(p->master_fd, &c, 1); printf("Sent Ctrl+R (0x12)\n"); return 1; }
+        if (IsKeyPressed(KEY_S)) { char c = 19; write(p->master_fd, &c, 1); printf("Sent Ctrl+S (0x13)\n"); return 1; }
+        if (IsKeyPressed(KEY_T)) { char c = 20; write(p->master_fd, &c, 1); printf("Sent Ctrl+T (0x14)\n"); return 1; }
+        if (IsKeyPressed(KEY_U)) { char c = 21; write(p->master_fd, &c, 1); printf("Sent Ctrl+U (0x15)\n"); return 1; }
+        if (IsKeyPressed(KEY_V)) { char c = 22; write(p->master_fd, &c, 1); printf("Sent Ctrl+V (0x16)\n"); return 1; }
+        if (IsKeyPressed(KEY_W)) { char c = 23; write(p->master_fd, &c, 1); printf("Sent Ctrl+W (0x17)\n"); return 1; }
+        if (IsKeyPressed(KEY_X)) { char c = 24; write(p->master_fd, &c, 1); printf("Sent Ctrl+X (0x18)\n"); return 1; }
+        if (IsKeyPressed(KEY_Y)) { char c = 25; write(p->master_fd, &c, 1); printf("Sent Ctrl+Y (0x19)\n"); return 1; }
+        if (IsKeyPressed(KEY_Z)) { char c = 26; write(p->master_fd, &c, 1); printf("Sent Ctrl+Z (0x1A)\n"); return 1; }
+    }
     switch (key) {
         case KEY_ENTER:      printf("KEY_ENTER\n");vterm_keyboard_key(vt, VTERM_KEY_ENTER, mod); return 1;
         case KEY_TAB:        printf("KEY_TAB\n");vterm_keyboard_key(vt, VTERM_KEY_TAB, mod); return 1;
@@ -122,27 +152,56 @@ int raylib_key_to_vterm(VTerm* vt) {
         case KEY_F11: printf("KEY_F11\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(11), mod); return 1;
         case KEY_F12: printf("KEY_F12\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(12), mod); return 1;
     }
-    
-    KEY_F;
-    // Normal character input — use GetCharPressed for proper text
+    // Character input
     int c = GetCharPressed();
+    while (c > 0) {
+        // vterm_keyboard_key(vt, c, mod);
+        vterm_keyboard_unichar(vt, c, mod);
+        c = GetCharPressed();
+        continue;
+        // If Ctrl is held and it's a letter, send the control character directly
+        if (ctrl && c >= 'a' && c <= 'z') {
+            // Ctrl+A = 1, Ctrl+B = 2, ..., Ctrl+Z = 26
+            vterm_keyboard_unichar(vt, c - 'a' + 1, VTERM_MOD_NONE);
+            printf("control.\n");
+        } else if (ctrl && c >= 'A' && c <= 'Z') {
+            vterm_keyboard_unichar(vt, c - 'A' + 1, VTERM_MOD_NONE);
+        } else {
+            // Normal character
+            vterm_keyboard_unichar(vt, c, VTERM_MOD_NONE);
+        }
+        c = GetCharPressed();
+    }
+    return 1;
+    
+    // Normal character input — use GetCharPressed for proper text
+    int _c = GetCharPressed();
     if (key == KEY_F && c == 'f') {
         printf("match\n");
     }
-    while (c > 0) {
+    if (c > 0) {
         printf("C  %c\n", c);
         vterm_keyboard_unichar(vt, c, mod);
-        c = GetCharPressed();
     }
     
     return 1;
 }
 int handle_input(KeyEventList kl, void* payload) {
     Program* p = payload;
-    while (raylib_key_to_vterm(p->vt)) {
+    while (raylib_key_to_vterm(p->vt, p)) {
         char out[256];
         size_t len = vterm_output_read(p->vt, out, sizeof(out));
         if (len > 0) {
+            printf("Sending %zu bytes to nvim: ", len);
+            for (size_t i = 0; i < len; i++) {
+                if (out[i] >= 32 && out[i] < 127) {
+                    printf("'%c' ", out[i]);
+                } else {
+                    printf("0x%02x ", (unsigned char)out[i]);
+                }
+            }
+            printf("\n");
+
             write(p->master_fd, out, len);
         }
     }
@@ -164,7 +223,7 @@ int handle_input(KeyEventList kl, void* payload) {
         fflush(stdout);
         // non-blocking poll — return right away if nothing ready
         struct timeval tv = {0, 0};
-        select(MAX(p->master_fd, 0) + 1, &fds, NULL, NULL, &tv);
+        select(p->master_fd + 1, &fds, NULL, NULL, &tv);
         fflush(stdout);
 
         if (FD_ISSET(p->master_fd, &fds)) {
@@ -203,6 +262,57 @@ int handle_input(KeyEventList kl, void* payload) {
         fflush(stdout);
     return 1;
 }
+Color vterm_indexed_to_color(uint8_t idx) {
+    // Standard 16 colors (0-15)
+    static const Color ansi_colors[16] = {
+        // Normal colors (0-7)
+        {0x00, 0x00, 0x00, 0xFF},  // 0: Black
+        {0x80, 0x00, 0x00, 0xFF},  // 1: Red
+        {0x00, 0x80, 0x00, 0xFF},  // 2: Green
+        {0x80, 0x80, 0x00, 0xFF},  // 3: Yellow
+        {0x00, 0x00, 0x80, 0xFF},  // 4: Blue
+        {0x80, 0x00, 0x80, 0xFF},  // 5: Magenta
+        {0x00, 0x80, 0x80, 0xFF},  // 6: Cyan
+        {0xC0, 0xC0, 0xC0, 0xFF},  // 7: White
+        
+        // Bright colors (8-15)
+        {0x80, 0x80, 0x80, 0xFF},  // 8: Bright Black (Gray)
+        {0xFF, 0x00, 0x00, 0xFF},  // 9: Bright Red
+        {0x00, 0xFF, 0x00, 0xFF},  // 10: Bright Green
+        {0xFF, 0xFF, 0x00, 0xFF},  // 11: Bright Yellow
+        {0x00, 0x00, 0xFF, 0xFF},  // 12: Bright Blue
+        {0xFF, 0x00, 0xFF, 0xFF},  // 13: Bright Magenta
+        {0x00, 0xFF, 0xFF, 0xFF},  // 14: Bright Cyan
+        {0xFF, 0xFF, 0xFF, 0xFF},  // 15: Bright White
+    };
+    
+    // 0-15: Standard ANSI colors
+    if (idx < 16) {
+        return ansi_colors[idx];
+    }
+    
+    // 16-231: 6x6x6 RGB cube
+    if (idx >= 16 && idx <= 231) {
+        int cube_idx = idx - 16;
+        int r = (cube_idx / 36) % 6;
+        int g = (cube_idx / 6) % 6;
+        int b = cube_idx % 6;
+        
+        // Map 0-5 to 0x00, 0x5F, 0x87, 0xAF, 0xD7, 0xFF
+        const uint8_t levels[6] = {0x00, 0x5F, 0x87, 0xAF, 0xD7, 0xFF};
+        
+        return (Color){levels[r], levels[g], levels[b], 0xFF};
+    }
+    
+    // 232-255: Grayscale ramp
+    if (idx >= 232 && idx <= 255) {
+        uint8_t gray = 8 + (idx - 232) * 10;
+        return (Color){gray, gray, gray, 0xFF};
+    }
+    
+    // Fallback (shouldn't happen)
+    return (Color){0xFF, 0x00, 0xFF, 0xFF};  // Magenta for "error"
+}
 int draw(Cell* buf, size_t width, size_t height, void* payload) {
     Program* p = payload;
     int rows, cols;
@@ -214,8 +324,8 @@ int draw(Cell* buf, size_t width, size_t height, void* payload) {
     rows = p->rows;
     cols = p->cols;
     // clamp to what actually fits — vterm may not have resized yet
-    rows = MIN((int)height, (int)p->rows);
-    cols = MIN((int)width,  (int)p->cols);
+    // rows = MIN((int)height, (int)p->rows);
+    // cols = MIN((int)width,  (int)p->cols);
     // printf("Drawing %d %d\n", cols, rows);
 
     for (int r = 0; r < rows; r++) {
@@ -228,11 +338,65 @@ int draw(Cell* buf, size_t width, size_t height, void* payload) {
                 printf("Failed to get cell %d %d (c:%d r:%d) (given %zu:%zu) (prog %zu:%zu).\n",c,r, cols, rows, width, height, p->cols, p->rows);
                 buf[r*width + c].code = 'x';
                 continue;
-                // exit(1);
             }
-            buf[r*width + c].code = cell.chars[0];
+            Cell* _c = &(buf[r*width + c]);
+            _c->code = cell.chars[0];
+            _c->attr = cell.attrs;
+            _c->has_bg = 1;
+            if (cell.bg.type & VTERM_COLOR_DEFAULT_BG) {
+                _c->has_bg = 0;
+            }
+            _c->has_fg = 1;
+            if (cell.bg.type & VTERM_COLOR_DEFAULT_FG) {
+                _c->has_fg = 0;
+            }
+
+            if (_c->has_bg) {
+                if (cell.bg.type == VTERM_COLOR_RGB) {
+                    _c->bg.r = cell.bg.rgb.red;
+                    _c->bg.g = cell.bg.rgb.green;
+                    _c->bg.b = cell.bg.rgb.blue;
+                    _c->bg.a = 0xff;
+                    // printf("%.2x %.2x %.2x %.2x rgba\n", _c->bg.r, _c->bg.g,_c->bg.b,_c->bg.a);
+                } else if (cell.bg.type == VTERM_COLOR_DEFAULT_BG) {
+                    _c->bg.r = 0xff;
+                    _c->bg.g = 0xff;
+                    _c->bg.b = 0xff;
+                    _c->bg.a = 0xff;
+                    // printf("(default)%.2x %.2x %.2x %.2x rgba\n", _c->bg.r, _c->bg.g,_c->bg.b,_c->bg.a);
+                } else if (cell.bg.type == VTERM_COLOR_INDEXED) {
+                    _c->bg = vterm_indexed_to_color(cell.bg.indexed.idx);
+                } else {
+                printf("bg not implemented."); exit(1);
+                }
+            }
+            _c->has_fg = 1;
+            if(cell.fg.type == VTERM_COLOR_RGB) { 
+                _c->fg.r = cell.fg.rgb.red;
+                _c->fg.g = cell.fg.rgb.green;
+                _c->fg.b = cell.fg.rgb.blue;
+                _c->fg.a = 0xff;
+                // printf("(rgba)%.2x %.2x %.2x %.2x rgba\n", _c->fg.r, _c->fg.g,_c->fg.b,_c->fg.a);
+            } else if (cell.fg.type == VTERM_COLOR_DEFAULT_FG) {
+                _c->fg.r = 0xff;
+                _c->fg.g = 0xff;
+                _c->fg.b = 0xff;
+                _c->fg.a = 0xff;
+            } else if (cell.fg.type == VTERM_COLOR_INDEXED) {
+                _c->fg = vterm_indexed_to_color(cell.fg.indexed.idx);
+            } else {
+                printf("fg not implemented."); exit(1);
+            }
         }
     }
+    VTermPos cursor_pos;
+    VTermState* state = vterm_obtain_state(p->vt);
+    vterm_state_get_cursorpos(state, &cursor_pos);
+    buf[cursor_pos.col + width * cursor_pos.row].bg =GetColor(0x777777ff);
+    buf[cursor_pos.col + width * cursor_pos.row].has_bg = 1;
+    buf[cursor_pos.col + width * cursor_pos.row].has_fg = 1;
+    buf[cursor_pos.col + width * cursor_pos.row].fg = GetColor(0x080808ff);
+    // printf("CUrsor %d %d\n", cursor_pos.col, cursor_pos.row);
 
     return 1;
 }
