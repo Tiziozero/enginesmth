@@ -8,6 +8,8 @@
 
 #define MAX_KEYS 512
 
+typedef struct Program Program;
+
 typedef struct {
     int key;        // KEY_A, KEY_B, KEY_UP, etc.
     bool shift;
@@ -49,7 +51,8 @@ static inline KeyEventList get_key_events(void) {
     return list;
 }
 
-void* start();
+void* start(size_t w, size_t h);
+int resize(void* payload, size_t w, size_t h);
 int handle_input(KeyEventList kl, void* payload);
 int draw(Cell* buf, size_t width, size_t height, void* payload);
 #endif // EDITOR_H

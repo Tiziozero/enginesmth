@@ -1,481 +1,238 @@
 #include "editor.h"
-#include "raylib.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-typedef struct {
-    enum { ORIGINAL, ADD } source;
-    size_t offset, length;
-} Piece;
-typedef struct {
-    char* source, *add_buf;
-    Piece* pieces;
-    size_t count, cap;
-} PieceTable;
-typedef struct {
-    Vector2 cursor_pos;
-    size_t position;
-    PieceTable pt;
-    char* current_buf;
-    size_t cur_buf_count, cur_buf_cap;
-    size_t line_draw_offset_x, line_draw_offset_y;
-    enum {INPUT, NORMAL, VISUAL} mode;
-} ProgramState;
+#include <unistd.h>
+#include <linux/input.h>
+#include <fcntl.h>
+#include "vterm.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/param.h>
 
-PieceTable new_buf(char* src, size_t size) {
-    PieceTable p;
-    p.source = src;
-    p.add_buf = (char*)malloc(1024*sizeof(char));
-    p.add_buf[0] = '\0'; // Initialize as empty string
-    p.pieces = (Piece*)malloc(1024*sizeof(Piece));
-    p.count = 0;
-    p.cap = 1024;
-    
-    if (strlen(src) > 0) {
-        Piece piece_0;
-        piece_0.source = ORIGINAL;
-        piece_0.offset = 0;
-        piece_0.length = size;
-        p.pieces[0] = piece_0;  // Add this line!
-        p.count = 1;             // And this line!
+
+#include <pty.h>
+struct Program {
+    int master_fd;
+    int input_fd;
+    VTerm* vt;
+    VTermScreen *screen;
+    size_t rows, cols;
+};
+void* start(size_t w, size_t h) {
+
+    int master;
+    Program* p = malloc(sizeof(Program));
+    pid_t pid = forkpty(&master, NULL, NULL, NULL);
+
+    if (pid == 0) {
+        // child — this IS vim
+        // execlp("./test", "vim", "main.txt", NULL);
+        execlp("nvim", "nvim", "main.txt", NULL);
+        perror("execlp failed");  // only reached if exec failed
+        exit(1);
+        return 0;
     }
-    
+    // after opening master_fd in start():
+    fcntl(master, F_SETFL, O_NONBLOCK);
+    // int fd = open("/dev/input/event4", O_RDONLY | O_NONBLOCK);
+    // if (!fd) {
+        // exit(1);
+    // }
+
+    p->master_fd = master;
+    // p->input_fd = fd;
+    p->rows = h;
+    p->cols = w;
+    printf("New vterm %zu %zun", w, h);
+
+    p->vt = vterm_new(p->rows, p->cols);
+    vterm_set_utf8(p->vt, 1);  // Vim uses UTF-8
+
+    p->screen = vterm_obtain_screen(p->vt);
+    vterm_screen_reset(p->screen, 1);
+    // p->screen = vterm_obtain_screen(p->vt);
+
     return p;
 }
-// Helper function to get total length
-size_t get_length(PieceTable* pt) {
-    size_t len = 0;
-    for (size_t i = 0; i < pt->count; i++) {
-        len += pt->pieces[i].length;
-    }
-    return len;
-}
-// Helper function to find which piece contains a given position
-static int find_piece(PieceTable* pt, size_t pos, size_t* piece_offset) {
-    size_t current_pos = 0;
-    for (size_t i = 0; i < pt->count; i++) {
-        if (current_pos + pt->pieces[i].length > pos) {
-            *piece_offset = pos - current_pos;
-            return i;
-        }
-        current_pos += pt->pieces[i].length;
-    }
-    return -1; // Position out of bounds
-}
 
-// Helper function to ensure capacity
-static void ensure_capacity(PieceTable* pt) {
-    if (pt->count >= pt->cap) {
-        pt->cap *= 2;
-        // printf("readlloc %zu\n", pt->cap * sizeof(Piece));
-        pt->pieces = (Piece*)realloc(pt->pieces, pt->cap * sizeof(Piece));
-    }
-}
-
-// Add text at a given position
-int add(PieceTable* pt, size_t pos, const char* text, size_t text_len) {
-    if (!text || text_len == 0) return -1;
-    
-    // Append text to add_buf
-    size_t add_buf_len = strlen(pt->add_buf);
-    // printf("readlloc %zu\n", add_buf_len + text_len + 1);
-    pt->add_buf = (char*)realloc(pt->add_buf, add_buf_len + text_len + 1);
-    memcpy(pt->add_buf + add_buf_len, text, text_len);
-    pt->add_buf[add_buf_len + text_len] = '\0';
-    
-    // Handle insertion at the end
-    if (pos >= get_length(pt)) {
-        ensure_capacity(pt);
-        Piece new_piece = {ADD, add_buf_len, text_len};
-        pt->pieces[pt->count++] = new_piece;
-        return 0;
-    }
-    
-    // Find the piece containing the position
-    size_t piece_offset;
-    int piece_idx = find_piece(pt, pos, &piece_offset);
-    if (piece_idx < 0) return -1;
-    
-    // Split the piece if necessary
-    Piece* piece = &pt->pieces[piece_idx];
-    
-    if (piece_offset == 0) {
-        // Insert before this piece
-        ensure_capacity(pt);
-        memmove(&pt->pieces[piece_idx + 1], &pt->pieces[piece_idx], 
-                (pt->count - piece_idx) * sizeof(Piece));
-        Piece new_piece = {ADD, add_buf_len, text_len};
-        pt->pieces[piece_idx] = new_piece;
-        pt->count++;
-    } else if (piece_offset == piece->length) {
-        // Insert after this piece
-        ensure_capacity(pt);
-        memmove(&pt->pieces[piece_idx + 2], &pt->pieces[piece_idx + 1], 
-                (pt->count - piece_idx - 1) * sizeof(Piece));
-        Piece new_piece = {ADD, add_buf_len, text_len};
-        pt->pieces[piece_idx + 1] = new_piece;
-        pt->count++;
-    } else {
-        // Split the piece in the middle
-        ensure_capacity(pt);
-        ensure_capacity(pt);
-        
-        Piece left = {piece->source, piece->offset, piece_offset};
-        Piece middle = {ADD, add_buf_len, text_len};
-        Piece right = {piece->source, piece->offset + piece_offset, 
-                       piece->length - piece_offset};
-        
-        memmove(&pt->pieces[piece_idx + 3], &pt->pieces[piece_idx + 1], 
-                (pt->count - piece_idx - 1) * sizeof(Piece));
-        pt->pieces[piece_idx] = left;
-        pt->pieces[piece_idx + 1] = middle;
-        pt->pieces[piece_idx + 2] = right;
-        pt->count += 2;
-    }
-    
-    return 0;
-}
-
-// Delete text from start_pos to end_pos (exclusive)
-int delete(PieceTable* pt, size_t start_pos, size_t end_pos) {
-    if (start_pos >= end_pos) return -1;
-    
-    size_t start_piece_offset, end_piece_offset;
-    int start_idx = find_piece(pt, start_pos, &start_piece_offset);
-    int end_idx = find_piece(pt, end_pos - 1, &end_piece_offset);
-    
-    if (start_idx < 0 || end_idx < 0) return -1;
-    
-    end_piece_offset++; // Make it exclusive
-    
-    if (start_idx == end_idx) {
-        // Deletion within a single piece
-        Piece* piece = &pt->pieces[start_idx];
-        
-        if (start_piece_offset == 0 && end_piece_offset == piece->length) {
-            // Delete entire piece
-            memmove(&pt->pieces[start_idx], &pt->pieces[start_idx + 1],
-                    (pt->count - start_idx - 1) * sizeof(Piece));
-            pt->count--;
-        } else if (start_piece_offset == 0) {
-            // Delete from start
-            piece->offset += end_piece_offset;
-            piece->length -= end_piece_offset;
-        } else if (end_piece_offset == piece->length) {
-            // Delete to end
-            piece->length = start_piece_offset;
-        } else {
-            // Delete from middle - split into two pieces
-            ensure_capacity(pt);
-            
-            Piece left = {piece->source, piece->offset, start_piece_offset};
-            Piece right = {piece->source, piece->offset + end_piece_offset,
-                          piece->length - end_piece_offset};
-            
-            pt->pieces[start_idx] = left;
-            memmove(&pt->pieces[start_idx + 2], &pt->pieces[start_idx + 1],
-                    (pt->count - start_idx - 1) * sizeof(Piece));
-            pt->pieces[start_idx + 1] = right;
-            pt->count++;
-        }
-    } else {
-        // Deletion spans multiple pieces
-        
-        // Trim start piece
-        if (start_piece_offset == 0) {
-            // Remove entire start piece
-        } else {
-            pt->pieces[start_idx].length = start_piece_offset;
-            start_idx++;
-        }
-        
-        // Trim end piece
-        Piece* end_piece = &pt->pieces[end_idx];
-        if (end_piece_offset == end_piece->length) {
-            // Remove entire end piece
-            end_idx++;
-        } else {
-            end_piece->offset += end_piece_offset;
-            end_piece->length -= end_piece_offset;
-        }
-        
-        // Remove pieces in between
-        int pieces_to_remove = end_idx - start_idx;
-        if (pieces_to_remove > 0) {
-            memmove(&pt->pieces[start_idx], &pt->pieces[end_idx],
-                    (pt->count - end_idx) * sizeof(Piece));
-            pt->count -= pieces_to_remove;
-        }
-    }
-    
-    return 0;
-}
-
-size_t buf_to_cstr(PieceTable* pt, char** buf_ptr) {
-    size_t count, cap;
-    count = 0;
-    cap = 1024;
-    char* buf = malloc(1024);
-    for (size_t i = 0; i < pt->count; i++) {
-        // printf("Piece %zu ", i);
-        Piece p = pt->pieces[i];
-        char* source = 0;
-        if (p.source == ORIGINAL) {
-            source = pt->source;
-        } else {
-            source = pt->add_buf;
-        }
-        size_t offset = p.offset, len = p.length;
-        // printf(" piece \"%.*s\" ", (int)len, source + offset);
-        while (count + len + 1 > cap) {  // +1 for '\0'
-            cap *= 2;
-            // printf("Reacllo %zu\n", cap);
-            char* tmp = realloc(buf, cap);
-            if (!tmp) {
-                free(buf);
-                return 0;
-            }
-            buf = tmp;
-        }
-        memcpy(buf + count, source+offset, len);
-        count += len;
-        // printf("Count %zu\n", count);
-    }
-    if (count + 1 >= cap) {
-        // printf("readlloc %zu\n", cap + 1);
-        buf = realloc(buf, cap += 1);
-    }
-    buf[count] = '\0';
-    *buf_ptr = buf;
-    return count;
-}
-void* start() {
-    // printf("start\n");
+int resize(void* payload, size_t w, size_t h) {
     fflush(stdout);
-    ProgramState* ps = malloc(sizeof(ProgramState));
-    if (!ps) {
-        printf("Failed to create ps.");
-        fflush(stdout);
-    }
+    Program* p = payload;
+    p->rows = h;
+    p->cols = w;
+    vterm_set_size(p->vt, (int)p->rows, (int)p->cols);
+    printf("resize to %zu %zu\n", w, h);
     fflush(stdout);
-    ps->position = 0;
-    fflush(stdout);
-    
-    ps->cur_buf_count = 0;
-    ps->cur_buf_cap = 1024;
-    ps->current_buf = malloc(ps->cur_buf_cap);
-    fflush(stdout);
-    ps->pt = new_buf("", 0);
-    fflush(stdout);
-    ps->mode = NORMAL;
-    ps->line_draw_offset_x = 0;
-    ps->line_draw_offset_y = 0;
-    char*s;
-    size_t size = buf_to_cstr(&ps->pt, &s);
-    fflush(stdout);
-    printf("buf \"%.*s\" piece count: %zu\n", (int)size, s, ps->pt.count);
-    return ps;
-}
-int handle_normal_mode(KeyEventList kl, void* payload) {
-    ProgramState* ps = (ProgramState*)payload;
-    // printf("Key count %d\n", kl.count); 
-    for (size_t i = 0; i < kl.count; i++) {
-        if (kl.events[i].key == 'I') {
-            printf("Input Mode\n");
-            ps->mode = INPUT;
-        }
-        if (kl.events[i].key== 'q') {
-            printf("quit");
-            exit(0);
-        }
-    }
-    return 0;
-}
-char keycode_to_char(int key, bool shift, bool ctrl, bool alt) {
-    // Ctrl combinations (common shortcuts)
-    if (ctrl && !alt) {
-        if (key >= KEY_A && key <= KEY_Z) {
-            // Ctrl+A through Ctrl+Z = ASCII control codes 1-26
-            return (char)(key - KEY_A + 1);
-        }
-        return 0;
-    }
-    
-    // Alt combinations (typically not printable)
-    if (alt) {
-        return 0;
-    }
-    
-    // Letters
-    if (key >= KEY_A && key <= KEY_Z) {
-        char c = (char)(key - KEY_A + 'a');
-        if (shift) c -= 32; // uppercase
-        return c;
-    }
-    
-    // Numbers and their shifted symbols (UK layout)
-    if (key >= KEY_ZERO && key <= KEY_NINE) {
-        if (shift) {
-            switch(key) {
-                case KEY_ONE:   return '!';
-                case KEY_TWO:   return '"';   // UK: " not @
-                case KEY_THREE: return '#';   // UK: £ not # £ not printable
-                case KEY_FOUR:  return '$';
-                case KEY_FIVE:  return '%';
-                case KEY_SIX:   return '^';
-                case KEY_SEVEN: return '&';
-                case KEY_EIGHT: return '*';
-                case KEY_NINE:  return '(';
-                case KEY_ZERO:  return ')';
-            }
-        }
-        return (char)(key - KEY_ZERO + '0');
-    }
-    
-    // Special keys
-    if (key == KEY_SPACE) return ' ';
-    if (key == KEY_ENTER) return '\n';
-    if (key == KEY_TAB) return '\t';
-    if (key == KEY_BACKSPACE) return '\b';
-    
-    // Punctuation and symbols (UK layout differences)
-    switch(key) {
-        case KEY_MINUS:         return shift ? '_' : '-';
-        case KEY_EQUAL:         return shift ? '+' : '=';
-        case KEY_LEFT_BRACKET:  return shift ? '{' : '[';
-        case KEY_RIGHT_BRACKET: return shift ? '}' : ']';
-        case KEY_SEMICOLON:     return shift ? ':' : ';';
-        case KEY_APOSTROPHE:    return shift ? '@' : '\'';  // UK: @ on Shift+'
-        case KEY_GRAVE:         return shift ? '-' : '`';   // UK: ¬ on Shift+`
-        case KEY_BACKSLASH:     return shift ? '~' : '#';  // UK: same position
-        case KEY_COMMA:         return shift ? '<' : ',';
-        case KEY_PERIOD:        return shift ? '>' : '.';
-        case KEY_SLASH:         return shift ? '?' : '/';
-        
-        // UK-specific: # key (usually next to Enter, might be KEY_BACKSLASH on some systems)
-        case 35:                return shift ? '#' : '~';   // # key
-    }
-    
-    return 0;
-}
-int handle_input(KeyEventList kl, void* payload) {
-    ProgramState* ps = (ProgramState*)payload;
-    switch (ps->mode) {
-        case NORMAL:
-            return handle_normal_mode(kl, payload);
-        case INPUT:
-            for (size_t i = 0; i < kl.count; i++) {
-                int kc /* keycode */ = kl.events[i].key;
-                if (kc == KEY_LEFT) ps->position--;
-                else if (kc == KEY_RIGHT) ps->position++;
-                char k = keycode_to_char(kl.events[i].key, kl.events[i].shift,kl.events[i].ctrl,kl.events[i].alt);
-                if (k != 0) { // anything printable
-                    char key[2] = {k, 0};
-                    add(&ps->pt, ps->position, key, 1);
-                    ps->position += 1;
-                    char*s;
-                    size_t size = buf_to_cstr(&ps->pt, &s);
-                    printf("buf \"%.*s\" piece count: %zu\n", (int)size, s, ps->pt.count);
-                    free(s);
-                }
-            }
-            break;
-        case VISUAL: break;
-    }
+    // critical — vim reads this to know its terminal size
+    struct winsize ws = {
+        .ws_row = h,
+        .ws_col = w,
+    };
+    ioctl(p->master_fd, TIOCSWINSZ, &ws);
     return 1;
 }
+#include "raylib.h"
+#include "vterm.h"
 
-typedef struct {
-    char* text;      // pointer to start of line in original buffer
-    size_t length;   // length of line (excluding \n)
-} Line;
-
-typedef struct {
-    Line* lines;
-    size_t count;
-    size_t cap;
-} LineArray;
-
-LineArray split_buffer(char* buffer, size_t len) {
-    char* copy = malloc(len + 1);
-    memcpy(copy, buffer, len);
-    copy[len] = '\0';
-    // buffer = copy;
-    LineArray lines;
-    lines.cap = 1024;
-    lines.count = 0;
-    lines.lines = malloc(lines.cap * sizeof(Line));
+// Returns 1 if handled, 0 if not
+int raylib_key_to_vterm(VTerm* vt) {
+    int key = GetKeyPressed();
+    if (key == 0) return 0;
     
-    char* line_start = buffer;
-    char* p = buffer;
+    VTermModifier mod = VTERM_MOD_NONE;
     
-    while (*p != '\0') {
-        if (*p == '\n') {
-            // Found end of line
-            if (lines.count >= lines.cap) {
-                lines.cap *= 2;
-                lines.lines = realloc(lines.lines, lines.cap * sizeof(Line));
-            }
-            
-            lines.lines[lines.count].text = line_start;
-            lines.lines[lines.count].length = p - line_start;
-            lines.count++;
-            
-            line_start = p + 1;  // Next line starts after \n
-        }
-        p++;
-    }
+    // Check modifiers
+    if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT))
+        mod |= VTERM_MOD_SHIFT;
+    if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL))
+        mod |= VTERM_MOD_CTRL;
+    if (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT))
+        mod |= VTERM_MOD_ALT;
     
-    // Last line (if no trailing newline)
-    if (p > line_start) {
-        if (lines.count >= lines.cap) {
-            lines.cap *= 2;
-            lines.lines = realloc(lines.lines, lines.cap * sizeof(Line));
-        }
+    printf("Key %d\n", key);
+    // Special keys that vterm knows about
+    switch (key) {
+        case KEY_ENTER:      printf("KEY_ENTER\n");vterm_keyboard_key(vt, VTERM_KEY_ENTER, mod); return 1;
+        case KEY_TAB:        printf("KEY_TAB\n");vterm_keyboard_key(vt, VTERM_KEY_TAB, mod); return 1;
+        case KEY_BACKSPACE:  printf("KEY_BACKSPACE\n");vterm_keyboard_key(vt, VTERM_KEY_BACKSPACE, mod); return 1;
+        case KEY_ESCAPE:     printf("KEY_ESCAPE\n");vterm_keyboard_key(vt, VTERM_KEY_ESCAPE, mod); return 1;
+        case KEY_UP:         printf("KEY_UP\n");vterm_keyboard_key(vt, VTERM_KEY_UP, mod); return 1;
+        case KEY_DOWN:       printf("KEY_DOWN\n");vterm_keyboard_key(vt, VTERM_KEY_DOWN, mod); return 1;
+        case KEY_LEFT:       printf("KEY_LEFT\n");vterm_keyboard_key(vt, VTERM_KEY_LEFT, mod); return 1;
+        case KEY_RIGHT:      printf("KEY_RIGHT\n");vterm_keyboard_key(vt, VTERM_KEY_RIGHT, mod); return 1;
+        case KEY_HOME:       printf("KEY_HOME\n");vterm_keyboard_key(vt, VTERM_KEY_HOME, mod); return 1;
+        case KEY_END:        printf("KEY_END\n");vterm_keyboard_key(vt, VTERM_KEY_END, mod); return 1;
+        case KEY_PAGE_UP:    printf("KEY_PAGE_UP\n");vterm_keyboard_key(vt, VTERM_KEY_PAGEUP, mod); return 1;
+        case KEY_PAGE_DOWN:  printf("KEY_PAGE_DOWN\n");vterm_keyboard_key(vt, VTERM_KEY_PAGEDOWN, mod); return 1;
+        case KEY_INSERT:     printf("KEY_INSERT\n");vterm_keyboard_key(vt, VTERM_KEY_INS, mod); return 1;
+        case KEY_DELETE:     printf("KEY_DELETE\n");vterm_keyboard_key(vt, VTERM_KEY_DEL, mod); return 1;
         
-        lines.lines[lines.count].text = line_start;
-        lines.lines[lines.count].length = p - line_start;
-        lines.count++;
+        // Function keys
+        case KEY_F1:  printf("KEY_F1\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(1), mod); return 1;
+        case KEY_F2:  printf("KEY_F2\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(2), mod); return 1;
+        case KEY_F3:  printf("KEY_F3\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(3), mod); return 1;
+        case KEY_F4:  printf("KEY_F4\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(4), mod); return 1;
+        case KEY_F5:  printf("KEY_F5\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(5), mod); return 1;
+        case KEY_F6:  printf("KEY_F6\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(6), mod); return 1;
+        case KEY_F7:  printf("KEY_F7\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(7), mod); return 1;
+        case KEY_F8:  printf("KEY_F8\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(8), mod); return 1;
+        case KEY_F9:  printf("KEY_F9\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(9), mod); return 1;
+        case KEY_F10: printf("KEY_F10\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(10), mod); return 1;
+        case KEY_F11: printf("KEY_F11\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(11), mod); return 1;
+        case KEY_F12: printf("KEY_F12\n");vterm_keyboard_key(vt, VTERM_KEY_FUNCTION(12), mod); return 1;
     }
     
-    free(copy);
-    return lines;
-}
-
-void free_lines(LineArray* lines) {
-    free(lines->lines);
-}
-
-int draw(Cell* buf, size_t width, size_t height, void* payload) {
-    ProgramState* ps = (ProgramState*)payload;
-    char*s;
-    size_t size = buf_to_cstr(&ps->pt, &s);
-    printf("buf \"%.*s\" piece count: %zu\n", (int)size, s, ps->pt.count);
-    LineArray lines = split_buffer(s, size);
-    printf("after lines (%zu) (buflen %zu)\n", lines.count, size);
-    fflush(stdout);
-    if (lines.count == 0) return 1;
-    size_t x = ps->line_draw_offset_x, y = ps->line_draw_offset_y;
-    LineArray draw_lines = lines;
-    if (y > draw_lines.count) {
-        y = draw_lines.count - 1;
-        ps->line_draw_offset_y = y;
+    KEY_F;
+    // Normal character input — use GetCharPressed for proper text
+    int c = GetCharPressed();
+    if (key == KEY_F && c == 'f') {
+        printf("match\n");
     }
-    draw_lines.count -= y;
-    draw_lines.lines += y*sizeof(Line);
-    printf("y = %zu\n", y);
+    while (c > 0) {
+        printf("C  %c\n", c);
+        vterm_keyboard_unichar(vt, c, mod);
+        c = GetCharPressed();
+    }
+    
+    return 1;
+}
+int handle_input(KeyEventList kl, void* payload) {
+    Program* p = payload;
+    while (raylib_key_to_vterm(p->vt)) {
+        char out[256];
+        size_t len = vterm_output_read(p->vt, out, sizeof(out));
+        if (len > 0) {
+            write(p->master_fd, out, len);
+        }
+    }
+    fflush(stdout);
+    int master = p->master_fd;
+    static char* buf;
+    static size_t capacity;
+    if (!buf) {
+        capacity = 1024;
+        buf = malloc(1025);
+    }
 
-    for (size_t i = 0; i < draw_lines.count; i++) {
-        Line line = draw_lines.lines[i];
-        printf("%.*s \n", (int)(
-                line.length > width ? width : line.length),line.text);
-        for (size_t j = 0; j < 
-                (line.length > width ? width : line.length); j++) {
-            buf[i].code = line.text[i];
+    fd_set fds;
+    while (1) {
+        FD_ZERO(&fds);
+        FD_SET(p->master_fd, &fds);
+        // FD_SET(p->input_fd,  &fds);
+
+        fflush(stdout);
+        // non-blocking poll — return right away if nothing ready
+        struct timeval tv = {0, 0};
+        select(MAX(p->master_fd, 0) + 1, &fds, NULL, NULL, &tv);
+        fflush(stdout);
+
+        if (FD_ISSET(p->master_fd, &fds)) {
+    fflush(stdout);
+            // vim wrote output — feed to vterm
+            char buf[4096];
+            ssize_t n = read(p->master_fd, buf, sizeof(buf));
+            if (n > 0) {
+                fflush(stdout);
+                vterm_input_write(p->vt, buf, n);
+                fflush(stdout);
+                vterm_screen_flush_damage(p->screen);
+                fflush(stdout);
+            }
+        }
+
+        /*if (FD_ISSET(p->input_fd, &fds)) {
+            fflush(stdout);
+            // you got a hardware input event — translate and send to vim
+            struct input_event ev;
+            read(p->input_fd, &ev, sizeof(ev));
+            if (ev.type == EV_KEY && ev.value == 1) {  // key down
+                                                       // translate ev.code → vterm key, then:
+                char c = 'c';
+                vterm_keyboard_unichar(p->vt, c, VTERM_MOD_NONE);
+                // flush vterm's encoded output to vim's pty
+                char out[64];
+                size_t len = vterm_output_read(p->vt, out, sizeof(out));
+                if (len > 0) write(p->master_fd, out, len);
+                fflush(stdout);
+            }
+        }*/
+        fflush(stdout);
+        break;
+    }
+        fflush(stdout);
+    return 1;
+}
+int draw(Cell* buf, size_t width, size_t height, void* payload) {
+    Program* p = payload;
+    int rows, cols;
+    if (width != p->cols || height != p->rows) {
+        printf("state != prog\n");
+        printf("%zu %zu : %zu %zu\n", width, height, p->cols, p->rows);
+        // exit(1);
+    }
+    rows = p->rows;
+    cols = p->cols;
+    // clamp to what actually fits — vterm may not have resized yet
+    rows = MIN((int)height, (int)p->rows);
+    cols = MIN((int)width,  (int)p->cols);
+    // printf("Drawing %d %d\n", cols, rows);
+
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            VTermPos pos;
+            pos.row = r;
+            pos.col = c;
+            VTermScreenCell cell;
+            if (!vterm_screen_get_cell(p->screen, pos, &cell)) {
+                printf("Failed to get cell %d %d (c:%d r:%d) (given %zu:%zu) (prog %zu:%zu).\n",c,r, cols, rows, width, height, p->cols, p->rows);
+                buf[r*width + c].code = 'x';
+                continue;
+                // exit(1);
+            }
+            buf[r*width + c].code = cell.chars[0];
         }
     }
 
-    free_lines(&lines);
-    free(s);
     return 1;
 }

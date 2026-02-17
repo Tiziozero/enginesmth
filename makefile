@@ -1,3 +1,3 @@
 all:
-	cc -o prog main.c editor.c -lm -L./ -lraylib
+	cc -ggdb -o prog main.c editor.c -lm -L./ -lraylib -lvterm
 	./prog

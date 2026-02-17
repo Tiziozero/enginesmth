@@ -169,17 +169,15 @@ void process_input(void* payload) {
         key = GetCharPressed();
     } */
 
-    KeyEventList kl = get_key_events();
-    if (kl.count > 0) {
-        handle_input(kl, payload);
-    }
+    KeyEventList kl;
+    handle_input(kl, payload);
 }
 
 int main(void) {
     Screen s;
     s.swidth = 1280;
     s.sheight = 600;
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_MINIMIZED);
     InitWindow(s.swidth, s.sheight, "Hello Raylib");
 
     // init screen
@@ -201,7 +199,6 @@ int main(void) {
     LoadFontTexture(&s, "font.png");
     load_texture(&s.bg, "bg.png");
     s.has_bg = 1;
-
     // shader
     Shader shader = LoadShader(0, "fragments.fs");
     int satLoc = GetShaderLocation(shader, "saturation");
@@ -213,7 +210,6 @@ int main(void) {
     size_t count;
     char** images = get_all_image_files_recursive("~/.config/several", &count);
     if (!images) {
-        printf("Failed to get images.\n");
         return 1;
     }
     struct BgPayload p;
@@ -225,12 +221,11 @@ int main(void) {
     bg.duration = 5.0f;
     bg.payload = &p;
     bg.f = bg_handler;
-    screen_add_timeout(&s, bg);
+    // screen_add_timeout(&s, bg);
 
     for (size_t i = 0; i < count; i++) {
-        // printf("image \"%s\".\n", images[i]);
     }
-    void* payload = start();
+    void* payload = start(s.width, s.height);
 
     while (!WindowShouldClose()) {
         // timeouts first ig.
@@ -248,7 +243,6 @@ int main(void) {
         }
         // handle resize
         if (IsWindowResized()) {
-            printf("Resized: %d x %d\n", GetScreenWidth(), GetScreenHeight());
             int w = GetScreenWidth();
             int h = GetScreenHeight();
 
@@ -262,18 +256,28 @@ int main(void) {
             if (w != snappedW || h != snappedH) {
                 SetWindowSize(snappedW, snappedH);
             }
+            if (!resize(payload, s.width, s.height)) {
+                printf("Failed to resize.");
+            }
             s.swidth = snappedW;
             s.sheight = snappedH;
             // make sure fuckass screen buffers ok
             if (s.screen_capacity < s.width * s.height) {
                 s.screen_capacity = s.width * s.height;
-                s.screen = realloc(s.screen, s.screen_capacity);
+                s.screen = realloc(s.screen, s.screen_capacity*sizeof(Cell));
             }
+            printf("resized to %zu %zu\n", s.width, s.height);
         }
         // input
         process_input(payload);
+        fflush(stdout);
         // draw
-        memset(s.screen, 0, s.screen_capacity);
+        memset(s.screen, 0, s.screen_capacity*sizeof(Cell));
+        for (size_t i = 0; i < s.width*s.height; i++) {
+            s.screen[i].code = 0;
+            s.screen[i].bg = GetColor(0x000000ff);
+            s.screen[i].fg = GetColor(0x000000ff);
+        }
         draw(s.screen, s.width, s.height, payload);
         BeginDrawing();
         ClearBackground(GetColor(0x121212ff));
@@ -288,6 +292,6 @@ int main(void) {
         }
         EndDrawing();
     }
-    printf("end\n");
+    printf("end prog\n");
     return 0;
 }
