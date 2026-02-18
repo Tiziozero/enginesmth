@@ -7,6 +7,7 @@
 #include "editor.h"
 #include "find_imgs.h"
 #include "common.h"
+#include "commands.h"
 // colors are RGBA
 
 typedef struct {
@@ -157,7 +158,7 @@ void bg_handler(void* data) {
     TimeOut t;
     t.payload = data;
     t.f = bg_handler;
-    t.duration = 1.0; // seconds
+    t.duration = 5.0; // seconds
     screen_add_timeout(s, t);
 }
 
@@ -188,8 +189,8 @@ int main(void) {
     // printf("a %d f7 %d\n", KEY_A, KEY_F7); return 0;
 
     // init screen
-    s.cwidth = 20;
-    s.cheight = 30;
+    s.cwidth = 12;
+    s.cheight = 28;
     s.width = s.swidth/s.cwidth;
     s.height = s.sheight/s.cheight;
     s.screen_capacity = s.width*s.height;
@@ -204,10 +205,15 @@ int main(void) {
     // 16x20
     // 95.0 glyphs
     // load_texture(&s.bg, "bg.png");
-    LoadFontTexture(&s, "font.png");
-    s.font_bold = LoadTexture("font_bold.png");
-    s.font_italic = LoadTexture("font_italic.png");
-    s.font_italic_bold = LoadTexture("font_italic_bold.png");
+    // LoadFontTexture(&s, "font.png");
+    // s.font_bold = LoadTexture("font_bold.png");
+    // s.font_italic = LoadTexture("font_italic.png");
+    // s.font_italic_bold = LoadTexture("font_italic_bold.png");
+
+    s.font =                LoadTexture("_new_font.png");
+    s.font_bold =           LoadTexture("_new_font.png");
+    s.font_italic =         LoadTexture("_new_font.png");
+    s.font_italic_bold =    LoadTexture("_new_font.png");
     s.has_bg = 1;
     // shader
     Shader shader = LoadShader(0, "fragments.fs");
@@ -231,7 +237,7 @@ int main(void) {
     bg.duration = 0.1250f;
     bg.payload = &p;
     bg.f = bg_handler;
-    // screen_add_timeout(&s, bg);
+    screen_add_timeout(&s, bg);
 
     for (size_t i = 0; i < count; i++) {
     }
@@ -321,7 +327,6 @@ int main(void) {
                 }
             } else if  (c.attr.baseline ||
                 c.attr.blink ||
-                c.attr.bold ||
                 c.attr.dhl ||
                 c.attr.dwl ||
                 c.attr.font || 
@@ -332,10 +337,10 @@ int main(void) {
                 c.attr.strike || 
                 c.attr.underline) {
                 DrawRectangle(x*s.cwidth, y*s.cheight, s.cwidth, s.cheight, GetColor(0x121212ff));
-                DrawAsciiChar(c.code,x*s.cwidth,y*s.cheight, &s,s.font, BLACK);
-                if (s.screen[i].code != 0) {
+                DrawAsciiChar(c.code,x*s.cwidth,y*s.cheight, &s, s.font_italic, c.fg);
+                // if (s.screen[i].code != 0) {
                     // DrawPixel(x*s.cwidth, y*s.cheight, BLACK);
-                }
+                // }
             } else {
                 DrawAsciiChar(c.code,x*s.cwidth,y*s.cheight, &s, s.font, c.fg);
                 if (s.screen[i].code != 0) {
