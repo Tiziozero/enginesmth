@@ -203,8 +203,8 @@ int main(void) {
     // load font and bg
     // 16x20
     // 95.0 glyphs
+    // load_texture(&s.bg, "bg.png");
     LoadFontTexture(&s, "font.png");
-    load_texture(&s.bg, "bg.png");
     s.font_bold = LoadTexture("font_bold.png");
     s.font_italic = LoadTexture("font_italic.png");
     s.font_italic_bold = LoadTexture("font_italic_bold.png");
@@ -231,7 +231,7 @@ int main(void) {
     bg.duration = 0.1250f;
     bg.payload = &p;
     bg.f = bg_handler;
-    screen_add_timeout(&s, bg);
+    // screen_add_timeout(&s, bg);
 
     for (size_t i = 0; i < count; i++) {
     }
