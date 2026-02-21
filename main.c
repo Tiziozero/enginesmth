@@ -67,7 +67,7 @@ void DrawAsciiChar(char c, size_t x, size_t y, Screen* s, Texture2D font, Color 
 
 void draw_bg(Screen* s, Shader shader) {
     if (!s->has_bg) return;
-    double screen_ratio = (double)s->width/(double)s->height;
+    double screen_ratio = (double)s->swidth/(double)s->sheight;
     double image_ratio = (double)s->bg.width/(double)s->bg.height;
     Rectangle source;
     source.width = s->bg.width;
@@ -78,11 +78,13 @@ void draw_bg(Screen* s, Shader shader) {
     float width, height, x, y;
     x = y = 0;
     if (image_ratio > screen_ratio) { // centre height, fit width
+        printf("match width\n");
         double mltp = (double)s->swidth/(double)s->bg.width;
         width = s->bg.width * mltp;
         height = s->bg.height * mltp;
         y = (float)s->sheight / 2 - height/2;
     } else { // centre width, fit height
+        printf("match height\n");
         double mltp = (double)s->sheight/(double)s->bg.height;
         width = s->bg.width * mltp;
         height = s->bg.height * mltp;
@@ -224,7 +226,8 @@ int main(void) {
 
     // test timeout
     size_t count;
-    char** images = get_all_image_files_recursive("~/.config/several", &count);
+    // char** images = get_all_image_files_recursive("~/.config/several", &count);
+    char** images = get_all_image_files_recursive("/run/media/kleidi/data/several", &count);
     if (!images) {
         return 1;
     }
